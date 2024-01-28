@@ -2,10 +2,15 @@
 
 #pragma comment(lib, "gdiplus")
 #pragma comment(lib, "shlwapi")
+#pragma comment(lib, "comctl32")
+#pragma comment(lib, "dwmapi")
 
 #include <windows.h>
+#include <windowsx.h>
+#include <commctrl.h>
 #include <shlwapi.h>
 #include <gdiplus.h>
+#include <dwmapi.h>
 
 #include "GifEncoder.h"
 
@@ -15,6 +20,7 @@
 #define POINT2PIXEL(PT) MulDiv(PT, uDpiY, 72)
 
 TCHAR szClassName[] = TEXT("Window");
+RECT rcRecordingRect;
 
 BOOL GetScaling(HWND hWnd, UINT* pnX, UINT* pnY)
 {
@@ -60,88 +66,162 @@ BOOL GetScaling(HWND hWnd, UINT* pnX, UINT* pnY)
 	return bSetScaling;
 }
 
-BITMAPINFOHEADER createBitmapHeader(int width, int height)
+LRESULT CALLBACK LayerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	BITMAPINFOHEADER  bi;
-
-	// create a bitmap
-	bi.biSize = sizeof(BITMAPINFOHEADER);
-	bi.biWidth = width;
-	bi.biHeight = -height;  //this is the line that makes it draw upside down or not
-	bi.biPlanes = 1;
-	bi.biBitCount = 32;
-	bi.biCompression = BI_RGB;
-	bi.biSizeImage = 0;
-	bi.biXPelsPerMeter = 0;
-	bi.biYPelsPerMeter = 0;
-	bi.biClrUsed = 0;
-	bi.biClrImportant = 0;
-
-	return bi;
+	static BOOL bDrag;
+	static BOOL bDown;
+	static POINT posStart;
+	static RECT OldRect;
+	switch (msg) {
+	case WM_KEYDOWN:
+	case WM_RBUTTONDOWN:
+		{
+			RECT rect;
+			HWND hDesktopWnd = GetDesktopWindow();
+			GetWindowRect(hDesktopWnd, &rect);
+			rcRecordingRect = rect;
+		}
+		SendMessage(hWnd, WM_CLOSE, 0, 0);
+		break;
+	case WM_LBUTTONDOWN:
+	{
+		int xPos = GET_X_LPARAM(lParam);
+		int yPos = GET_Y_LPARAM(lParam);
+		POINT point = { xPos, yPos };
+		ClientToScreen(hWnd, &point);
+		posStart = point;
+		SetCapture(hWnd);
+	}
+	break;
+	case WM_MOUSEMOVE:
+		if (GetCapture() == hWnd)
+		{
+			int xPos = GET_X_LPARAM(lParam);
+			int yPos = GET_Y_LPARAM(lParam);
+			POINT point = { xPos, yPos };
+			ClientToScreen(hWnd, &point);
+			if (!bDrag) {
+				if (abs(xPos - posStart.x) > GetSystemMetrics(SM_CXDRAG) && abs(yPos - posStart.y) > GetSystemMetrics(SM_CYDRAG)) {
+					bDrag = TRUE;
+				}
+			}
+			else {
+				HDC hdc = GetDC(hWnd);
+				RECT rect = { min(point.x, posStart.x), min(point.y, posStart.y), max(point.x, posStart.x), max(point.y, posStart.y) };
+				HBRUSH hBrush = CreateSolidBrush(RGB(255, 0, 0));
+				HRGN hRgn1 = CreateRectRgn(OldRect.left, OldRect.top, OldRect.right, OldRect.bottom);
+				HRGN hRgn2 = CreateRectRgn(rect.left, rect.top, rect.right, rect.bottom);
+				CombineRgn(hRgn1, hRgn1, hRgn2, RGN_DIFF);
+				FillRgn(hdc, hRgn1, (HBRUSH)GetStockObject(BLACK_BRUSH));
+				FillRect(hdc, &rect, hBrush);
+				OldRect = rect;
+				DeleteObject(hBrush);
+				DeleteObject(hRgn1);
+				DeleteObject(hRgn2);
+				ReleaseDC(hWnd, hdc);
+			}
+		}
+		break;
+	case WM_LBUTTONUP:
+		if (GetCapture() == hWnd) {
+			ReleaseCapture();
+			if (bDrag) {
+				bDrag = FALSE;
+				int xPos = GET_X_LPARAM(lParam);
+				int yPos = GET_Y_LPARAM(lParam);
+				POINT point = { xPos, yPos };
+				ClientToScreen(hWnd, &point);
+				RECT rect = { min(point.x, posStart.x), min(point.y, posStart.y), max(point.x, posStart.x), max(point.y, posStart.y) };
+				ShowWindow(hWnd, SW_HIDE);
+				rcRecordingRect = rect;
+			}
+			else {
+				ShowWindow(hWnd, SW_HIDE);
+				HWND hTargetWnd = WindowFromPoint(posStart);
+				hTargetWnd = GetAncestor(hTargetWnd, GA_ROOT);
+				if (hTargetWnd) {
+					RECT rect;
+					if (DwmGetWindowAttribute(hTargetWnd, DWMWA_EXTENDED_FRAME_BOUNDS, &rect, sizeof(rect)) != S_OK) {
+						GetWindowRect(hTargetWnd, &rect);
+					}
+					rcRecordingRect = rect;
+				}
+			}
+		}
+		break;
+	default:
+		return DefWindowProc(hWnd, msg, wParam, lParam);
+	}
+	return 0;
 }
 
-HBITMAP GdiPlusScreenCapture(HWND hWnd)
-{
-	// get handles to a device context (DC)
-	HDC hwindowDC = GetDC(hWnd);
-	HDC hwindowCompatibleDC = CreateCompatibleDC(hwindowDC);
-	SetStretchBltMode(hwindowCompatibleDC, COLORONCOLOR);
-
-	// define scale, height and width
-	int scale = 1;
-	int screenx = GetSystemMetrics(SM_XVIRTUALSCREEN);
-	int screeny = GetSystemMetrics(SM_YVIRTUALSCREEN);
-	int width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-	int height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-
-	// create a bitmap
-	HBITMAP hbwindow = CreateCompatibleBitmap(hwindowDC, width, height);
-	BITMAPINFOHEADER bi = createBitmapHeader(width, height);
-
-	// use the previously created device context with the bitmap
-	SelectObject(hwindowCompatibleDC, hbwindow);
-
-	// Starting with 32-bit Windows, GlobalAlloc and LocalAlloc are implemented as wrapper functions that call HeapAlloc using a handle to the process's default heap.
-	// Therefore, GlobalAlloc and LocalAlloc have greater overhead than HeapAlloc.
-	DWORD dwBmpSize = ((width * bi.biBitCount + 31) / 32) * 4 * height;
-	HANDLE hDIB = GlobalAlloc(GHND, dwBmpSize);
-	char* lpbitmap = (char*)GlobalLock(hDIB);
-
-	// copy from the window device context to the bitmap device context
-	StretchBlt(hwindowCompatibleDC, 0, 0, width, height, hwindowDC, screenx, screeny, width, height, SRCCOPY);   //change SRCCOPY to NOTSRCCOPY for wacky colors !
-	GetDIBits(hwindowCompatibleDC, hbwindow, 0, height, lpbitmap, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
-
-	// avoid memory leak
-	DeleteDC(hwindowCompatibleDC);
-	ReleaseDC(hWnd, hwindowDC);
-
-	return hbwindow;
-}
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	static DWORD dwTick = 30;
+	static HWND hTrackBar;
+	static HWND hEdit1;
 	static CGifEncoder* pGifEncoder = NULL;
 	static HWND hButton1;
 	static HWND hButton2;
-	static HWND hEdit;
+	static HWND hButton3;
 	static HFONT hFont;
 	static UINT uDpiX = DEFAULT_DPI, uDpiY = DEFAULT_DPI;
+	static BOOL bProgramEvent = FALSE;
+	static BOOL bRecording = FALSE;
+	static LPCWSTR lpszLayerWindowClass = L"LayerWindow";
+	static HWND hLayerWnd;
+
 	switch (msg)
 	{
 	case WM_CREATE:
-		hButton1 = CreateWindow(TEXT("BUTTON"), TEXT("録画"), WS_VISIBLE | WS_CHILD, 0, 0, 0, 0, hWnd, (HMENU)IDOK, ((LPCREATESTRUCT)lParam)->hInstance, 0);
-		hButton2 = CreateWindow(TEXT("BUTTON"), TEXT("終了"), WS_VISIBLE | WS_CHILD, 0, 0, 0, 0, hWnd, (HMENU)IDCANCEL, ((LPCREATESTRUCT)lParam)->hInstance, 0);
-		hEdit = CreateWindowEx(WS_EX_CLIENTEDGE, TEXT("EDIT"), 0, WS_VISIBLE | WS_CHILD | ES_MULTILINE | ES_AUTOHSCROLL | ES_AUTOVSCROLL, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		InitCommonControls();
+		{
+			WNDCLASS wndclass = { 0,LayerWndProc,0,0,((LPCREATESTRUCT)lParam)->hInstance,0,LoadCursor(0,IDC_CROSS),(HBRUSH)GetStockObject(BLACK_BRUSH),0,lpszLayerWindowClass };
+			RegisterClass(&wndclass);
+		}
+		{
+			RECT rect;
+			HWND hDesktopWnd = GetDesktopWindow();
+			GetWindowRect(hDesktopWnd, &rect);
+			rcRecordingRect = rect;
+		}
+		hButton3 = CreateWindow(L"BUTTON", L"ウィンドウ/領域 指定", WS_VISIBLE | WS_CHILD, 0, 0, 0, 0, hWnd, (HMENU)1001, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		hButton1 = CreateWindow(L"BUTTON", L"録画", WS_VISIBLE | WS_CHILD, 0, 0, 0, 0, hWnd, (HMENU)IDOK, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		hButton2 = CreateWindow(L"BUTTON", L"録画終了", WS_VISIBLE | WS_CHILD | WS_DISABLED, 0, 0, 0, 0, hWnd, (HMENU)IDCANCEL, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		hTrackBar = CreateWindowEx(0, TRACKBAR_CLASS, 0, WS_VISIBLE | WS_CHILD | TBS_AUTOTICKS | TBS_HORZ | TBS_TOOLTIPS, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);				
+		SendMessage(hTrackBar, TBM_SETRANGE, TRUE, MAKELPARAM(1, 60));
+		SendMessage(hTrackBar, TBM_SETTICFREQ, 1, 0);
+		SendMessage(hTrackBar, TBM_SETPOS, TRUE, dwTick);
+		SendMessage(hTrackBar, TBM_SETPAGESIZE, 0, 1);
+		SendMessage(hTrackBar, TBM_SETBUDDY, 0, 1);
+		{
+			WCHAR szText[8];
+			wsprintf(szText, L"%d", dwTick);
+			hEdit1 = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", szText, WS_VISIBLE | WS_CHILD | ES_AUTOHSCROLL | ES_NUMBER, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		}
 		SendMessage(hWnd, WM_DPICHANGED, 0, 0);
 		break;
 	case WM_SIZE:
-		MoveWindow(hButton1, POINT2PIXEL(10), POINT2PIXEL(10), POINT2PIXEL(256), POINT2PIXEL(32), TRUE);
-		MoveWindow(hButton2, POINT2PIXEL(10), POINT2PIXEL(50), POINT2PIXEL(256), POINT2PIXEL(32), TRUE);
-		MoveWindow(hEdit, POINT2PIXEL(10), POINT2PIXEL(90), LOWORD(lParam) - POINT2PIXEL(20), HIWORD(lParam) - POINT2PIXEL(100), TRUE);
+		MoveWindow(hButton3, POINT2PIXEL(10), POINT2PIXEL(10), POINT2PIXEL(256), POINT2PIXEL(32), TRUE);
+		MoveWindow(hButton1, POINT2PIXEL(10), POINT2PIXEL(50), POINT2PIXEL(256), POINT2PIXEL(32), TRUE);
+		MoveWindow(hButton2, POINT2PIXEL(10), POINT2PIXEL(90), POINT2PIXEL(256), POINT2PIXEL(32), TRUE);
+		MoveWindow(hTrackBar, POINT2PIXEL(10), POINT2PIXEL(130), POINT2PIXEL(256), POINT2PIXEL(32), TRUE);
+		MoveWindow(hEdit1, POINT2PIXEL(10), POINT2PIXEL(170), POINT2PIXEL(256), POINT2PIXEL(32), TRUE);
+		break;
+	case WM_HSCROLL:
+		if (LOWORD(wParam) == SB_THUMBTRACK && bProgramEvent == FALSE) {
+			dwTick = HIWORD(wParam);
+			WCHAR szText[256];
+			wsprintf(szText, L"%d", dwTick);
+			bProgramEvent = TRUE;
+			SetWindowText(hEdit1, szText);
+			bProgramEvent = FALSE;
+		}
 		break;
 	case WM_TIMER:
 		if (pGifEncoder) {
-			Gdiplus::Bitmap* bmp = new Gdiplus::Bitmap(256, 256);
+			Gdiplus::Bitmap* bmp = new Gdiplus::Bitmap(rcRecordingRect.right - rcRecordingRect.left, rcRecordingRect.bottom - rcRecordingRect.top);
 			if (bmp) {
 				Gdiplus::Graphics g(bmp);
 				{
@@ -149,8 +229,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 					HWND hDesktopWnd = GetDesktopWindow();
 					{
 						HDC hDC = GetDC(hDesktopWnd);
-						BitBlt(hdc, 0, 0, 256, 256, hDC, 0, 0, SRCCOPY);
+						BitBlt(hdc, 0, 0, rcRecordingRect.right - rcRecordingRect.left, rcRecordingRect.bottom - rcRecordingRect.top, hDC, rcRecordingRect.left, rcRecordingRect.top, SRCCOPY);
 						ReleaseDC(hDesktopWnd, hDC);
+						CURSORINFO cursor = { sizeof(cursor) };
+						GetCursorInfo(&cursor);
+						if (cursor.flags == CURSOR_SHOWING) {
+							ICONINFO info = { sizeof(info) };
+							GetIconInfo(cursor.hCursor, &info);
+							const int x = cursor.ptScreenPos.x - rcRecordingRect.left - info.xHotspot;
+							const int y = cursor.ptScreenPos.y - rcRecordingRect.top - info.yHotspot;
+							BITMAP bmpCursor = { 0 };
+							GetObject(info.hbmColor, sizeof(bmpCursor), &bmpCursor);
+							DrawIconEx(hdc, x, y, cursor.hCursor, bmpCursor.bmWidth, bmpCursor.bmHeight,
+								0, NULL, DI_NORMAL);
+						}
 					}
 					g.ReleaseHDC(hdc);
 				}
@@ -161,32 +253,82 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_COMMAND:
 		if (LOWORD(wParam) == IDOK) {
-			if (pGifEncoder == 0) {
+			if (pGifEncoder == 0 && bRecording == FALSE) {
 				pGifEncoder = new CGifEncoder();
 				if (pGifEncoder) {
-					pGifEncoder->SetFrameSize(256, 256);
-					pGifEncoder->SetFrameRate(60);
+					pGifEncoder->SetFrameSize(rcRecordingRect.right - rcRecordingRect.left, rcRecordingRect.bottom - rcRecordingRect.top);
+					pGifEncoder->SetFrameRate((float)dwTick);
 					WCHAR szFilePath[MAX_PATH];
 					GetModuleFileName(NULL, szFilePath, MAX_PATH);
 					PathRemoveFileSpec(szFilePath);
-					PathAppend(szFilePath, L"test.gif");
+					WCHAR szFileName[MAX_PATH];
+					SYSTEMTIME st;
+					GetLocalTime(&st);
+					wsprintf(szFileName, L"%04d%02d%02d%02d%02d%02d%03d.gif", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+					PathAppend(szFilePath, szFileName);
 					pGifEncoder->StartEncoder(std::wstring(szFilePath));
-					SetTimer(hWnd, 1, 1000 / 60, NULL);
+					bRecording = TRUE;
+					EnableWindow(hButton1, FALSE);
+					EnableWindow(hButton2, TRUE);
+					EnableWindow(hButton3, FALSE);
+					EnableWindow(hTrackBar, FALSE);
+					EnableWindow(hEdit1, FALSE);
+					SetTimer(hWnd, 1, 1000 / dwTick, NULL);
 				}
 			}
 			else {
 				KillTimer(hWnd, 1);
+				if (pGifEncoder) {
+					pGifEncoder->FinishEncoder();
+					delete pGifEncoder;
+					pGifEncoder = NULL;
+				}
+				EnableWindow(hButton1, TRUE);
+				EnableWindow(hButton2, FALSE);
+				EnableWindow(hButton3, TRUE);
+				EnableWindow(hTrackBar, TRUE);
+				EnableWindow(hEdit1, TRUE);
+			}
+		} else if (LOWORD(wParam) == IDCANCEL) {
+			KillTimer(hWnd, 1);
+			if (pGifEncoder) {
 				pGifEncoder->FinishEncoder();
 				delete pGifEncoder;
 				pGifEncoder = NULL;
 			}
-		} else if (LOWORD(wParam) == IDCANCEL)
-		{
-			if (pGifEncoder) {
-				KillTimer(hWnd, 1);
-				pGifEncoder->FinishEncoder();
-				delete pGifEncoder;
-				pGifEncoder = NULL;
+			EnableWindow(hButton1, TRUE);
+			EnableWindow(hButton2, FALSE);
+			EnableWindow(hButton3, TRUE);
+			EnableWindow(hTrackBar, TRUE);
+			EnableWindow(hEdit1, TRUE);
+		}
+		else if (LOWORD(wParam) == 1001) {
+			hLayerWnd = CreateWindowEx(WS_EX_LAYERED | WS_EX_TOPMOST, lpszLayerWindowClass, 0, WS_POPUP, 0, 0, 0, 0, hWnd, 0, GetModuleHandle(0), 0);
+			SetLayeredWindowAttributes(hLayerWnd, RGB(255, 0, 0), 64, LWA_ALPHA | LWA_COLORKEY);
+			SetWindowPos(hLayerWnd, HWND_TOPMOST, 0, 0, GetSystemMetrics(SM_CXVIRTUALSCREEN), GetSystemMetrics(SM_CYVIRTUALSCREEN), SWP_NOSENDCHANGING);
+			ShowWindow(hLayerWnd, SW_NORMAL);
+			UpdateWindow(hLayerWnd);
+		}
+		else if (hEdit1 == (HWND)lParam && HIWORD(wParam) == EN_CHANGE) {
+			if (bProgramEvent == FALSE) {
+				WCHAR szText[256];
+				GetWindowText(hEdit1, szText, 256);
+				dwTick = _wtoi(szText);
+				if (dwTick < 1) {
+					dwTick = 1;
+					bProgramEvent = TRUE;
+					SetWindowText(hEdit1, L"1");
+					bProgramEvent = FALSE;
+				}
+				else if (dwTick > 60) {
+					dwTick = 60;
+					bProgramEvent = TRUE;
+					SetWindowText(hEdit1, L"60");
+					bProgramEvent = FALSE;
+				}
+				bProgramEvent = TRUE;
+				SendMessage(hTrackBar, TBM_SETPOS, TRUE, dwTick);
+				bProgramEvent = FALSE;
 			}
 		}
 		break;
@@ -209,7 +351,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		DeleteObject(hFont);
 		hFont = CreateFontW(-POINT2PIXEL(10), 0, 0, 0, FW_NORMAL, 0, 0, 0, SHIFTJIS_CHARSET, 0, 0, 0, 0, L"MS Shell Dlg");
 		SendMessage(hButton1, WM_SETFONT, (WPARAM)hFont, 0);
-		SendMessage(hEdit, WM_SETFONT, (WPARAM)hFont, 0);
+		SendMessage(hButton2, WM_SETFONT, (WPARAM)hFont, 0);
+		SendMessage(hButton3, WM_SETFONT, (WPARAM)hFont, 0);
+		SendMessage(hEdit1, WM_SETFONT, (WPARAM)hFont, 0);
 		break;
 	case WM_DESTROY:
 		if (pGifEncoder) {
@@ -227,7 +371,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPreInst, LPSTR pCmdLine, int nCmdShow)
+int WINAPI wWinMain(_In_ HINSTANCE hInstance,
+	_In_opt_ HINSTANCE hPrevInstance,
+	_In_ LPWSTR lpCmdLine,
+	_In_ int nShowCmd)
 {
 	ULONG_PTR gdiToken;
 	Gdiplus::GdiplusStartupInput gdiSI;
@@ -248,7 +395,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPreInst, LPSTR pCmdLine, int 
 	RegisterClass(&wndclass);
 	HWND hWnd = CreateWindow(
 		szClassName,
-		TEXT("Window"),
+		TEXT("GIF Screen Recorder"),
 		WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
 		CW_USEDEFAULT,
 		0,

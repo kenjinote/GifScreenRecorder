@@ -6,8 +6,8 @@
 CGifEncoder::CGifEncoder()
 {
 	m_started = false;
-	m_width = 500;
-	m_height = 500;
+	m_width = 256;
+	m_height = 256;
 	m_delayTime = 100;
 	m_repeatNum = 0;
 	m_haveFrame = false;
@@ -174,7 +174,7 @@ void CGifEncoder::SetImagePropertyItem()
 	propertyItem.type = PropertyTagTypeShort;
 	propertyItem.value = &sValue;
 	m_pImage->SetPropertyItem(&propertyItem);
-	const long lImageNum = 1 + m_pBitMapVec.size();
+	const long lImageNum = (long)(1 + m_pBitMapVec.size());
 	long *plValue = new long[lImageNum];
 	for (int ix = 0; ix<lImageNum; ix++)
 	{
