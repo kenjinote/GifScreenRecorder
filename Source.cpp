@@ -369,6 +369,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			}
 		}
 		return DefWindowProc(hWnd, msg, wParam, lParam);
+	case WM_CTLCOLORBTN:
 	case WM_CTLCOLORSTATIC:
 		return (LRESULT)GetStockObject(WHITE_BRUSH);
 	case WM_DPICHANGED:
