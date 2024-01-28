@@ -13,6 +13,7 @@
 #include <dwmapi.h>
 
 #include "GifEncoder.h"
+#include "resource.h"
 
 #define DEFAULT_DPI 96
 #define SCALEX(X) MulDiv(X, uDpiX, DEFAULT_DPI)
@@ -165,6 +166,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	static HWND hButton1;
 	static HWND hButton2;
 	static HWND hButton3;
+	static HWND hStatic;
 	static HFONT hFont;
 	static UINT uDpiX = DEFAULT_DPI, uDpiY = DEFAULT_DPI;
 	static BOOL bProgramEvent = FALSE;
@@ -186,10 +188,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			GetWindowRect(hDesktopWnd, &rect);
 			rcRecordingRect = rect;
 		}
-		hButton3 = CreateWindow(L"BUTTON", L"ウィンドウ/領域 指定", WS_VISIBLE | WS_CHILD, 0, 0, 0, 0, hWnd, (HMENU)1001, ((LPCREATESTRUCT)lParam)->hInstance, 0);
-		hButton1 = CreateWindow(L"BUTTON", L"録画", WS_VISIBLE | WS_CHILD, 0, 0, 0, 0, hWnd, (HMENU)IDOK, ((LPCREATESTRUCT)lParam)->hInstance, 0);
-		hButton2 = CreateWindow(L"BUTTON", L"録画終了", WS_VISIBLE | WS_CHILD | WS_DISABLED, 0, 0, 0, 0, hWnd, (HMENU)IDCANCEL, ((LPCREATESTRUCT)lParam)->hInstance, 0);
-		hTrackBar = CreateWindowEx(0, TRACKBAR_CLASS, 0, WS_VISIBLE | WS_CHILD | TBS_AUTOTICKS | TBS_HORZ | TBS_TOOLTIPS, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);				
+		hButton3 = CreateWindow(L"BUTTON", L"　ウィンドウ/領域 指定", WS_VISIBLE | WS_CHILD | BS_LEFT, 0, 0, 0, 0, hWnd, (HMENU)1001, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		{
+			HICON hIcon = (HICON)LoadIcon(((LPCREATESTRUCT)lParam)->hInstance, MAKEINTRESOURCE(IDI_RECT));
+			SendMessage(hButton3, BM_SETIMAGE, IMAGE_ICON, (LPARAM)hIcon);
+		}
+		hButton1 = CreateWindow(L"BUTTON", L"　録画", WS_VISIBLE | WS_CHILD | BS_LEFT, 0, 0, 0, 0, hWnd, (HMENU)IDOK, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		{
+			HICON hIcon = (HICON)LoadIcon(((LPCREATESTRUCT)lParam)->hInstance, MAKEINTRESOURCE(IDI_REC));
+			SendMessage(hButton1, BM_SETIMAGE, IMAGE_ICON, (LPARAM)hIcon);
+		}
+		hButton2 = CreateWindow(L"BUTTON", L"　録画終了", WS_VISIBLE | WS_CHILD | WS_DISABLED | BS_LEFT, 0, 0, 0, 0, hWnd, (HMENU)IDCANCEL, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		{
+			HICON hIcon = (HICON)LoadIcon(((LPCREATESTRUCT)lParam)->hInstance, MAKEINTRESOURCE(IDI_STOP));
+			SendMessage(hButton2, BM_SETIMAGE, IMAGE_ICON, (LPARAM)hIcon);
+		}
+		hStatic = CreateWindow(L"STATIC", L"フレームレート：", WS_VISIBLE | WS_CHILD | SS_CENTERIMAGE, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
+		hTrackBar = CreateWindowEx(0, TRACKBAR_CLASS, 0, WS_VISIBLE | WS_CHILD | TBS_AUTOTICKS | TBS_HORZ | TBS_TOOLTIPS, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
 		SendMessage(hTrackBar, TBM_SETRANGE, TRUE, MAKELPARAM(1, 60));
 		SendMessage(hTrackBar, TBM_SETTICFREQ, 1, 0);
 		SendMessage(hTrackBar, TBM_SETPOS, TRUE, dwTick);
@@ -203,11 +218,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		SendMessage(hWnd, WM_DPICHANGED, 0, 0);
 		break;
 	case WM_SIZE:
+		OutputDebugString(L"aa\r\n");
 		MoveWindow(hButton3, POINT2PIXEL(10), POINT2PIXEL(10), POINT2PIXEL(256), POINT2PIXEL(32), TRUE);
 		MoveWindow(hButton1, POINT2PIXEL(10), POINT2PIXEL(50), POINT2PIXEL(256), POINT2PIXEL(32), TRUE);
 		MoveWindow(hButton2, POINT2PIXEL(10), POINT2PIXEL(90), POINT2PIXEL(256), POINT2PIXEL(32), TRUE);
-		MoveWindow(hTrackBar, POINT2PIXEL(10), POINT2PIXEL(130), POINT2PIXEL(256), POINT2PIXEL(32), TRUE);
-		MoveWindow(hEdit1, POINT2PIXEL(10), POINT2PIXEL(170), POINT2PIXEL(256), POINT2PIXEL(32), TRUE);
+		MoveWindow(hStatic, POINT2PIXEL(10), POINT2PIXEL(130), POINT2PIXEL(64), POINT2PIXEL(16), TRUE);
+		MoveWindow(hEdit1, POINT2PIXEL(74), POINT2PIXEL(130), POINT2PIXEL(16), POINT2PIXEL(16), TRUE);
+		MoveWindow(hTrackBar, POINT2PIXEL(74+16), POINT2PIXEL(130), POINT2PIXEL(276 - 74 - 16 - 10), POINT2PIXEL(16), TRUE);
+		RECT rcClient;
+		SetRect(&rcClient, 0, 0, POINT2PIXEL(276), POINT2PIXEL(172-16));
+		AdjustWindowRectEx(&rcClient, GetWindowLong(hWnd, GWL_STYLE), FALSE, GetWindowLong(hWnd, GWL_EXSTYLE));	
+		SetWindowPos(hWnd, NULL, 0, 0, rcClient.right - rcClient.left, rcClient.bottom - rcClient.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOSENDCHANGING);
 		break;
 	case WM_HSCROLL:
 		if (LOWORD(wParam) == SB_THUMBTRACK && bProgramEvent == FALSE) {
@@ -268,15 +289,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 					PathAppend(szFilePath, szFileName);
 					pGifEncoder->StartEncoder(std::wstring(szFilePath));
 					bRecording = TRUE;
+					SetTimer(hWnd, 1, 1000 / dwTick, NULL);
 					EnableWindow(hButton1, FALSE);
 					EnableWindow(hButton2, TRUE);
 					EnableWindow(hButton3, FALSE);
 					EnableWindow(hTrackBar, FALSE);
 					EnableWindow(hEdit1, FALSE);
-					SetTimer(hWnd, 1, 1000 / dwTick, NULL);
 				}
 			}
 			else {
+				bRecording = FALSE;
 				KillTimer(hWnd, 1);
 				if (pGifEncoder) {
 					pGifEncoder->FinishEncoder();
@@ -290,6 +312,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				EnableWindow(hEdit1, TRUE);
 			}
 		} else if (LOWORD(wParam) == IDCANCEL) {
+			bRecording = FALSE;
 			KillTimer(hWnd, 1);
 			if (pGifEncoder) {
 				pGifEncoder->FinishEncoder();
@@ -346,6 +369,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			}
 		}
 		return DefWindowProc(hWnd, msg, wParam, lParam);
+	case WM_CTLCOLORSTATIC:
+		return (LRESULT)GetStockObject(WHITE_BRUSH);
 	case WM_DPICHANGED:
 		GetScaling(hWnd, &uDpiX, &uDpiY);
 		DeleteObject(hFont);
@@ -354,10 +379,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		SendMessage(hButton2, WM_SETFONT, (WPARAM)hFont, 0);
 		SendMessage(hButton3, WM_SETFONT, (WPARAM)hFont, 0);
 		SendMessage(hEdit1, WM_SETFONT, (WPARAM)hFont, 0);
+		SendMessage(hStatic, WM_SETFONT, (WPARAM)hFont, 0);
 		break;
 	case WM_DESTROY:
+		bRecording = FALSE;
+		KillTimer(hWnd, 1);
 		if (pGifEncoder) {
-			KillTimer(hWnd, 1);
 			pGifEncoder->FinishEncoder();
 			delete pGifEncoder;
 			pGifEncoder = NULL;
@@ -386,7 +413,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance,
 		0,
 		0,
 		hInstance,
-		0,
+		LoadIcon(hInstance,MAKEINTRESOURCE(IDI_MAIN)),
 		LoadCursor(0,IDC_ARROW),
 		(HBRUSH)(COLOR_WINDOW + 1),
 		0,
@@ -396,7 +423,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance,
 	HWND hWnd = CreateWindow(
 		szClassName,
 		TEXT("GIF Screen Recorder"),
-		WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+		WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN,
 		CW_USEDEFAULT,
 		0,
 		CW_USEDEFAULT,

@@ -164,6 +164,16 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="GifEncoder.h" />
+    <ClInclude Include="resource.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="GIFScreenRecorder.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="icon.ico" />
+    <Image Include="recording.ico" />
+    <Image Include="setrectangle.ico" />
+    <Image Include="stop.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
