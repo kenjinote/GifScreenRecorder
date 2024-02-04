@@ -82,7 +82,8 @@ LRESULT CALLBACK LayerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			GetWindowRect(hDesktopWnd, &rect);
 			rcRecordingRect = rect;
 		}
-		SendMessage(hWnd, WM_CLOSE, 0, 0);
+		ShowWindow(hWnd, SW_HIDE);
+		SendMessage(GetParent(hWnd), WM_APP, 0, 0);
 		break;
 	case WM_LBUTTONDOWN:
 	{
@@ -148,6 +149,7 @@ LRESULT CALLBACK LayerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 					rcRecordingRect = rect;
 				}
 			}
+			SendMessage(GetParent(hWnd), WM_APP, 0, 0);
 		}
 		break;
 	default:
@@ -156,6 +158,29 @@ LRESULT CALLBACK LayerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
+LRESULT CALLBACK RectangleWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	switch (msg) {
+		case WM_PAINT:
+		{
+			PAINTSTRUCT ps;
+			HDC hdc = BeginPaint(hWnd, &ps);
+			HPEN hPen = CreatePen(PS_SOLID, 2, RGB(255, 0, 0));
+			HPEN hOldPen = (HPEN)SelectObject(hdc, hPen);
+			HBRUSH hOldBrush = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+			RECT rect;
+			GetClientRect(hWnd, &rect);
+			Rectangle(hdc, 1, 1, rect.right, rect.bottom);
+			SelectObject(hdc, hOldBrush);
+			SelectObject(hdc, hOldPen);
+			EndPaint(hWnd, &ps);
+		}
+		break;
+	default:
+		return DefWindowProc(hWnd, msg, wParam, lParam);
+	}
+	return 0;
+}
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -172,8 +197,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	static BOOL bProgramEvent = FALSE;
 	static BOOL bRecording = FALSE;
 	static LPCWSTR lpszLayerWindowClass = L"LayerWindow";
+	static LPCWSTR lpszRectangleWindowClass = L"RectangleWindow";
 	static HWND hLayerWnd;
-
+	static HWND hRectangleWnd;
 	switch (msg)
 	{
 	case WM_CREATE:
@@ -181,12 +207,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		{
 			WNDCLASS wndclass = { 0,LayerWndProc,0,0,((LPCREATESTRUCT)lParam)->hInstance,0,LoadCursor(0,IDC_CROSS),(HBRUSH)GetStockObject(BLACK_BRUSH),0,lpszLayerWindowClass };
 			RegisterClass(&wndclass);
+			WNDCLASS wndclass2 = { 0,RectangleWndProc,0,0,((LPCREATESTRUCT)lParam)->hInstance,0,LoadCursor(0,IDC_ARROW),(HBRUSH)GetStockObject(BLACK_BRUSH),0,lpszRectangleWindowClass };
+			RegisterClass(&wndclass2);
 		}
 		{
 			RECT rect;
 			HWND hDesktopWnd = GetDesktopWindow();
 			GetWindowRect(hDesktopWnd, &rect);
 			rcRecordingRect = rect;
+			PostMessage(hWnd, WM_APP, 0, 0);
 		}
 		hButton3 = CreateWindow(L"BUTTON", L"　ウィンドウ/領域 指定", WS_VISIBLE | WS_CHILD | BS_LEFT, 0, 0, 0, 0, hWnd, (HMENU)1001, ((LPCREATESTRUCT)lParam)->hInstance, 0);
 		{
@@ -218,7 +247,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		SendMessage(hWnd, WM_DPICHANGED, 0, 0);
 		break;
 	case WM_SIZE:
-		OutputDebugString(L"aa\r\n");
 		MoveWindow(hButton3, POINT2PIXEL(10), POINT2PIXEL(10), POINT2PIXEL(256), POINT2PIXEL(32), TRUE);
 		MoveWindow(hButton1, POINT2PIXEL(10), POINT2PIXEL(50), POINT2PIXEL(256), POINT2PIXEL(32), TRUE);
 		MoveWindow(hButton2, POINT2PIXEL(10), POINT2PIXEL(90), POINT2PIXEL(256), POINT2PIXEL(32), TRUE);
@@ -261,8 +289,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 							const int y = cursor.ptScreenPos.y - rcRecordingRect.top - info.yHotspot;
 							BITMAP bmpCursor = { 0 };
 							GetObject(info.hbmColor, sizeof(bmpCursor), &bmpCursor);
-							DrawIconEx(hdc, x, y, cursor.hCursor, bmpCursor.bmWidth, bmpCursor.bmHeight,
-								0, NULL, DI_NORMAL);
+							DrawIconEx(hdc, x, y, cursor.hCursor, bmpCursor.bmWidth, bmpCursor.bmHeight, 0, NULL, DI_NORMAL);
 						}
 					}
 					g.ReleaseHDC(hdc);
@@ -326,6 +353,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			EnableWindow(hEdit1, TRUE);
 		}
 		else if (LOWORD(wParam) == 1001) {
+			if (hRectangleWnd) {
+				ShowWindow(hRectangleWnd, SW_HIDE);
+			}
 			hLayerWnd = CreateWindowEx(WS_EX_LAYERED | WS_EX_TOPMOST, lpszLayerWindowClass, 0, WS_POPUP, 0, 0, 0, 0, hWnd, 0, GetModuleHandle(0), 0);
 			SetLayeredWindowAttributes(hLayerWnd, RGB(255, 0, 0), 64, LWA_ALPHA | LWA_COLORKEY);
 			SetWindowPos(hLayerWnd, HWND_TOPMOST, 0, 0, GetSystemMetrics(SM_CXVIRTUALSCREEN), GetSystemMetrics(SM_CYVIRTUALSCREEN), SWP_NOSENDCHANGING);
@@ -355,15 +385,36 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			}
 		}
 		break;
+	case WM_ACTIVATEAPP:
+		if (wParam == FALSE) {
+			if (hLayerWnd) {
+				ShowWindow(hLayerWnd, SW_HIDE);
+			}
+			if (hRectangleWnd && bRecording == FALSE) {
+				ShowWindow(hRectangleWnd, SW_HIDE);
+			}
+		} else {
+			if (hRectangleWnd) {
+				ShowWindow(hRectangleWnd, SW_NORMAL);
+			}
+		}
+		break;
+	case WM_APP:
+		if (!hRectangleWnd) {
+			hRectangleWnd = CreateWindowEx(WS_EX_LAYERED | WS_EX_TOPMOST, lpszRectangleWindowClass, 0, WS_POPUP, 0, 0, 0, 0, hWnd, 0, GetModuleHandle(0), 0);
+			SetLayeredWindowAttributes(hRectangleWnd, RGB(0, 0, 0), 255, LWA_ALPHA | LWA_COLORKEY);
+		}
+		SetWindowPos(hRectangleWnd, 0, rcRecordingRect.left - 2, rcRecordingRect.top - 2, rcRecordingRect.right - rcRecordingRect.left + 4, rcRecordingRect.bottom - rcRecordingRect.top + 4, SWP_NOACTIVATE);
+		ShowWindow(hRectangleWnd, SW_NORMAL);
+		UpdateWindow(hRectangleWnd);
+		break;
 	case WM_NCCREATE:
 		{
 			const HMODULE hModUser32 = GetModuleHandle(TEXT("user32.dll"));
-			if (hModUser32)
-			{
+			if (hModUser32) {
 				typedef BOOL(WINAPI*fnTypeEnableNCScaling)(HWND);
 				const fnTypeEnableNCScaling fnEnableNCScaling = (fnTypeEnableNCScaling)GetProcAddress(hModUser32, "EnableNonClientDpiScaling");
-				if (fnEnableNCScaling)
-				{
+				if (fnEnableNCScaling) {
 					fnEnableNCScaling(hWnd);
 				}
 			}
@@ -399,10 +450,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-int WINAPI wWinMain(_In_ HINSTANCE hInstance,
-	_In_opt_ HINSTANCE hPrevInstance,
-	_In_ LPWSTR lpCmdLine,
-	_In_ int nShowCmd)
+int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nShowCmd)
 {
 	ULONG_PTR gdiToken;
 	Gdiplus::GdiplusStartupInput gdiSI;
