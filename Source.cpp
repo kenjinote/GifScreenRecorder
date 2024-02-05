@@ -76,40 +76,29 @@ LRESULT CALLBACK LayerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	switch (msg) {
 	case WM_KEYDOWN:
 	case WM_RBUTTONDOWN:
-		{
-			RECT rect;
-			HWND hDesktopWnd = GetDesktopWindow();
-			GetWindowRect(hDesktopWnd, &rect);
-			rcRecordingRect = rect;
-		}
+		GetWindowRect(hWnd, &rcRecordingRect);
 		ShowWindow(hWnd, SW_HIDE);
 		SendMessage(GetParent(hWnd), WM_APP, 0, 0);
 		break;
 	case WM_LBUTTONDOWN:
-	{
-		int xPos = GET_X_LPARAM(lParam);
-		int yPos = GET_Y_LPARAM(lParam);
-		POINT point = { xPos, yPos };
-		ClientToScreen(hWnd, &point);
-		posStart = point;
+		GetCursorPos(&posStart);
 		SetCapture(hWnd);
-	}
-	break;
+		break;
 	case WM_MOUSEMOVE:
 		if (GetCapture() == hWnd)
 		{
-			int xPos = GET_X_LPARAM(lParam);
-			int yPos = GET_Y_LPARAM(lParam);
-			POINT point = { xPos, yPos };
-			ClientToScreen(hWnd, &point);
+			POINT point;
+			GetCursorPos(&point);
 			if (!bDrag) {
-				if (abs(xPos - posStart.x) > GetSystemMetrics(SM_CXDRAG) && abs(yPos - posStart.y) > GetSystemMetrics(SM_CYDRAG)) {
+				if (abs(point.x - posStart.x) > GetSystemMetrics(SM_CXDRAG) && abs(point.y - posStart.y) > GetSystemMetrics(SM_CYDRAG)) {
 					bDrag = TRUE;
 				}
 			}
 			else {
 				HDC hdc = GetDC(hWnd);
 				RECT rect = { min(point.x, posStart.x), min(point.y, posStart.y), max(point.x, posStart.x), max(point.y, posStart.y) };
+				ScreenToClient(hWnd, (LPPOINT)&rect);
+				ScreenToClient(hWnd, ((LPPOINT)&rect) + 1);
 				HBRUSH hBrush = CreateSolidBrush(RGB(255, 0, 0));
 				HRGN hRgn1 = CreateRectRgn(OldRect.left, OldRect.top, OldRect.right, OldRect.bottom);
 				HRGN hRgn2 = CreateRectRgn(rect.left, rect.top, rect.right, rect.bottom);
@@ -210,13 +199,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			WNDCLASS wndclass2 = { 0,RectangleWndProc,0,0,((LPCREATESTRUCT)lParam)->hInstance,0,LoadCursor(0,IDC_ARROW),(HBRUSH)GetStockObject(BLACK_BRUSH),0,lpszRectangleWindowClass };
 			RegisterClass(&wndclass2);
 		}
-		{
-			RECT rect;
-			HWND hDesktopWnd = GetDesktopWindow();
-			GetWindowRect(hDesktopWnd, &rect);
-			rcRecordingRect = rect;
-			PostMessage(hWnd, WM_APP, 0, 0);
-		}
+		SetRect(&rcRecordingRect, 0, 0, GetSystemMetrics(SM_CXVIRTUALSCREEN), GetSystemMetrics(SM_CYVIRTUALSCREEN));
+		OffsetRect(&rcRecordingRect, GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN));
 		hButton3 = CreateWindow(L"BUTTON", L"　ウィンドウ/領域 指定", WS_VISIBLE | WS_CHILD | BS_LEFT, 0, 0, 0, 0, hWnd, (HMENU)1001, ((LPCREATESTRUCT)lParam)->hInstance, 0);
 		{
 			HICON hIcon = (HICON)LoadIcon(((LPCREATESTRUCT)lParam)->hInstance, MAKEINTRESOURCE(IDI_RECT));
@@ -245,6 +229,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			hEdit1 = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", szText, WS_VISIBLE | WS_CHILD | ES_AUTOHSCROLL | ES_NUMBER, 0, 0, 0, 0, hWnd, 0, ((LPCREATESTRUCT)lParam)->hInstance, 0);
 		}
 		SendMessage(hWnd, WM_DPICHANGED, 0, 0);
+		SendMessage(hWnd, WM_APP, 0, 0);
 		break;
 	case WM_SIZE:
 		MoveWindow(hButton3, POINT2PIXEL(10), POINT2PIXEL(10), POINT2PIXEL(256), POINT2PIXEL(32), TRUE);
@@ -358,7 +343,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			}
 			hLayerWnd = CreateWindowEx(WS_EX_LAYERED | WS_EX_TOPMOST, lpszLayerWindowClass, 0, WS_POPUP, 0, 0, 0, 0, hWnd, 0, GetModuleHandle(0), 0);
 			SetLayeredWindowAttributes(hLayerWnd, RGB(255, 0, 0), 64, LWA_ALPHA | LWA_COLORKEY);
-			SetWindowPos(hLayerWnd, HWND_TOPMOST, 0, 0, GetSystemMetrics(SM_CXVIRTUALSCREEN), GetSystemMetrics(SM_CYVIRTUALSCREEN), SWP_NOSENDCHANGING);
+			SetWindowPos(hLayerWnd, HWND_TOPMOST, GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN), GetSystemMetrics(SM_CXVIRTUALSCREEN), GetSystemMetrics(SM_CYVIRTUALSCREEN), SWP_NOSENDCHANGING);
 			ShowWindow(hLayerWnd, SW_NORMAL);
 			UpdateWindow(hLayerWnd);
 		}
